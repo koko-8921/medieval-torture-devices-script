@@ -39,7 +39,8 @@ const activeModule =
   const skipToContent = (event: MouseEvent<HTMLAnchorElement>) => {
     // The hash holds the route, so a normal "#main" link would navigate away.
     event.preventDefault()
-    mainRef.current?.focus({ preventScroll: true })
+mainRef.current?.focus({ preventScroll: true })
+mainRef.current?.scrollIntoView({ block: 'start' })
   }
 
 const page =
