@@ -24,6 +24,8 @@ export default function App() {
   const moduleSlug = moduleSlugFromPath(pathname)
 const activeModule =
   moduleSlug != null ? findModule(moduleSlug) : undefined
+
+// Module pages use their own theme; other pages use the default theme.
 // Module pages use their own theme; other pages use the default theme.
   const theme = activeModule?.theme ?? DEFAULT_THEME
   useTheme(theme)
