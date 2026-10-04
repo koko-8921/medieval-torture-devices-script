@@ -1,0 +1,336 @@
+--- a/README.md
++++ b/README.md
+@@ -1 +1 @@
+-# Catalogue: [Browse Scripts Website](https://sawyer100.github.io/medieval-torture-and-violence-scripts/)
++# Catalogue: Medieval Torture Devices & Violence Scripts
+@@ -57,22 +57,29 @@
+ ## Files
+ 
+ - `historical_equipment.js` — production module.
++- `action_variety_engine.js` — fictional confrontation/action vocabulary.
++- `violence_engine.js` — fictional violence/intimidation variety.
++- `witness_reaction_engine.js` — crowd, witness, authority, and aftermath atmosphere.
+ - `tests/test-scenarios.md` — behavioral test matrix.
+ - `docs/DESIGN.md` — selection/token architecture and tuning notes.
+ 
+-## Website
++## Modules
+ 
+-A guided installation site for the modules lives in `src/` (React, TypeScript, Vite). Pushing to `main` builds and deploys it to GitHub Pages through `.github/workflows/pages.yml`:
++The repository is intentionally script-first. Each JanitorAI module lives at the repository root and can be pasted into a character's Scripts configuration.
+ 
+-<https://sawyer100.github.io/medieval-torture-and-violence-scripts/>
++Current modules include:
+ 
+-```sh
+-npm install
+-npm run dev      # local preview with live reload
+-npm run build    # TypeScript checks, then a production build in dist/
+-```
++- `historical_equipment.js` — context-sensitive historical equipment knowledge.
++- `action_variety_engine.js` — non-procedural fictional confrontation/action vocabulary.
++- `violence_engine.js` — non-procedural fictional violence/intimidation variety.
++- `witness_reaction_engine.js` — crowd, witness, authority, and aftermath atmosphere.
+ 
+-The site loads `historical_equipment.js` and `action_variety_engine.js` directly from the repository root, so the code a visitor copies is always the file in this repository. Edit the scripts here, never inside `src/`.
++No GitHub Pages site or deployment workflow is required.
+ 
+-To add a module: put the script in the repository root, copy one of the files in `src/data/modules/`, edit its text, and add it to the list in `src/data/modules/index.ts`. The navigation, home page, and installer are generated from that list. The JanitorAI button and menu names used by the install steps are kept in one place, `src/data/janitor.ts`.
++## Safety / scope
+ 
++Catalogue descriptions and scene modules are identification, provenance, visual/narrative context, and selection metadata. They intentionally avoid operational instructions for injuring a real person.
++
++## Version
++
++**v0.3.0** — adds non-procedural witness/social atmosphere and removes the GitHub Pages deployment workflow.
+--- a/docs/DESIGN.md
++++ b/docs/DESIGN.md
+@@ -29,3 +29,11 @@
+ ## Historical scope
+ 
+ The database intentionally mixes documented apparatus with later penal equipment, reconstructions, and famous disputed museum objects. The `status` field tells the model which is which rather than silently treating every popular internet “medieval torture device” as authentic.
++
++## Witness reactions
++
++`witness_reaction_engine.js` handles the social layer around tense scenes: crowd silence, people looking away, institutional routine, guarded formality, distance opening around a confrontation, and small aftermath details.
++
++It is deliberately separate from `violence_engine.js`. The violence engine supplies fictional action vocabulary; this engine supplies the room's response. Keeping them separate makes it possible to use social pressure in scenes where no new violent action should be introduced.
++
++The engine is non-procedural and does not determine {{char}}'s motives, morality, willingness, or skill.
+--- a/tests/test-scenarios.md
++++ b/tests/test-scenarios.md
+@@ -29,3 +29,22 @@
+ 6. Large/stationary candidates are penalized without established access unless directly mentioned.
+ 7. Disputed/legendary entries retain provenance labels.
+ 8. Turning `DEBUG` off removes console diagnostics without changing selection.
++
++## Witness reaction engine
++
++| Scenario | Expected behavior |
++|---|---|
++| Public punishment with a crowd | Adds restrained social pressure such as silence, glances, spacing, or whispers. |
++| Private cell with no witnesses | Does not invent a crowd; may use institutional quiet or routine if strongly activated. |
++| Kind/nonviolent character discussing a historical punishment | Adds atmosphere only; does not change the character's morality or intent. |
++| Repeated public-violence references | Avoids cycling through the exact same crowd reaction every generation. |
++| Scene aftermath | Can add glances, resumed routine, or quiet institutional details without inventing extra violence. |
++| Public scene in bad weather | Weather may be used as contrast when established by the conversation. |
++
++### Witness-engine regression checks
++
++1. The engine never instructs a user how to injure or restrain a real person.
++2. It appends to `context.character.scenario` rather than replacing it.
++3. It stays within `MAX_TOKENS` using the script's estimator.
++4. Latest-message signals outweigh stale context.
++5. It does not force {{char}} or invent motives.
+--- /dev/null
++++ b/witness_reaction_engine.js
+@@ -0,0 +1,181 @@
+++"use worker";
+++
+++/*
+++ * Witness Reaction Engine — JanitorAI Script
+++ * v0.1.0
+++ *
+++ * Adds social atmosphere around punishment, violence, and tense public scenes.
+++ * It changes the surrounding room/crowd response, not the character's intent
+++ * or the mechanics of harming anyone.
+++ *
+++ * Narrative texture only. Avoids procedural guidance for harming or restraining
+++ * a real person.
+++ */
+++
+++context.character = context.character || {};
+++context.character.scenario = context.character.scenario || "";
+++
+++const CONFIG = {
+++  DEBUG: false,
+++  HISTORY_DEPTH: 6,
+++  MAX_BEATS: 4,
+++  MAX_TOKENS: 170,
+++  MIN_ACTIVATION: 4,
+++  LATEST_BONUS: 4,
+++  RECENT_BONUS: 1,
+++  DIRECT_BONUS: 6,
+++  REPETITION_PENALTY: 4
+++};
+++
+++const REACTIONS = [
+++  {
+++    id:"crowd_silence",
+++    tags:["crowd","sound"],
+++    keys:["crowd","public","spectator","witness","market","courtyard","execution","punishment"],
+++    line:"let nearby conversation thin out or stop for a moment, making the sudden quiet noticeable"
+++  },
+++  {
+++    id:"look_away",
+++    tags:["crowd","social"],
+++    keys:["witness","crowd","spectator","public","punishment","violence","blood"],
+++    line:"have one or two onlookers look away, busy themselves with a sleeve, or suddenly find the floor interesting"
+++  },
+++  {
+++    id:"whisper_ripple",
+++    tags:["crowd","sound"],
+++    keys:["crowd","market","public","spectator","rumor","witness","court"],
+++    line:"use a small ripple of whispers that dies down when someone important turns their head"
+++  },
+++  {
+++    id:"guard_formality",
+++    tags:["authority","social"],
+++    keys:["guard","warden","soldier","prison","cell","court","punishment","execution"],
+++    line:"make nearby authority figures become noticeably formal, clipped, or watchful without inventing a new motive"
+++  },
+++  {
+++    id:"distance_opens",
+++    tags:["crowd","space"],
+++    keys:["crowd","public","market","courtyard","fight","violence","struggle"],
+++    line:"let people subtly make more space around the tense scene, leaving an uneasy pocket of emptiness"
+++  },
+++  {
+++    id:"bell_or_signal",
+++    tags:["sound","authority"],
+++    keys:["execution","punishment","court","castle","prison","public","ceremony"],
+++    line:"use a bell, shouted signal, bootstep, or other institutional sound to punctuate the scene"
+++  },
+++  {
+++    id:"ordinary_life",
+++    tags:["contrast","place"],
+++    keys:["street","market","courtyard","castle","public","crowd"],
+++    line:"keep ordinary life moving at the edges—vendors, footsteps, weather, or chores continuing despite the tension"
+++  },
+++  {
+++    id:"aftermath_glances",
+++    tags:["aftermath","crowd"],
+++    keys:["after","aftermath","released","escape","fight","struggle","punishment"],
+++    line:"after the tense moment, let people exchange brief glances or quietly return to whatever they were doing"
+++  },
+++  {
+++    id:"institutional_memory",
+++    tags:["authority","aftermath"],
+++    keys:["prison","warden","court","punishment","execution","castle","guard"],
+++    line:"suggest that the place has routines around grim events through practiced movements, prepared spaces, or people who know when to stay silent"
+++  },
+++  {
+++    id:"rumor_seed",
+++    tags:["social","aftermath"],
+++    keys:["rumor","market","crowd","public","witness","aftermath"],
+++    line:"if the scene is public, leave room for conflicting whispers and half-understood versions of what just happened"
+++  },
+++  {
+++    id:"weather_pressure",
+++    tags:["place","contrast"],
+++    keys:["courtyard","street","market","public","rain","snow","cold","storm"],
+++    line:"use weather—rain on stone, cold wind, heat, or mud—to make the crowd's discomfort more tangible"
+++  },
+++  {
+++    id:"empty_threshold",
+++    tags:["space","tension"],
+++    keys:["door","corridor","cell","prison","chamber","castle","dungeon"],
+++    line:"make a doorway or corridor feel conspicuously empty, as though people nearby prefer not to linger"
+++  }
+++];
+++
+++const TRIGGERS = [
+++  "punishment","execution","violence","fight","attack","brawl","prison",
+++  "prisoner","guard","warden","court","crowd","spectator","witness",
+++  "public","market","courtyard","cell","dungeon","interrogation",
+++  "torture","stocks","pillory","gibbet","manacles","chains","aftermath"
+++];
+++
+++function msg(m){ return ((m && m.message) ? m.message : String(m || "")).toLowerCase(); }
+++function hits(text, arr){ let n=0; for(const x of arr) if(text.includes(x)) n++; return n; }
+++function tokens(text){ return Math.ceil((text || "").length / 4); }
+++
+++const messages = context.chat.last_messages || [];
+++const recent = messages
+++  .slice(Math.max(0, messages.length - CONFIG.HISTORY_DEPTH))
+++  .map(msg)
+++  .join(" ");
+++const latest = String(context.chat.last_message || "").toLowerCase();
+++const activation = hits(latest, TRIGGERS) * 3 + hits(recent, TRIGGERS);
+++
+++if (activation >= CONFIG.MIN_ACTIVATION) {
+++  const ranked = REACTIONS.map((reaction, i) => {
+++    let score = hits(latest, reaction.keys) * CONFIG.LATEST_BONUS
+++      + hits(recent, reaction.keys) * CONFIG.RECENT_BONUS;
+++
+++    if (reaction.keys.some(k => latest.includes(k))) score += CONFIG.DIRECT_BONUS;
+++
+++    const repeated = reaction.keys.some(k => recent.includes(k) && !latest.includes(k));
+++    if (repeated) score -= CONFIG.REPETITION_PENALTY;
+++
+++    score += (10 - (i % 10)) / 100;
+++    return { reaction, score };
+++  }).filter(x => x.score > 0).sort((a,b) => b.score - a.score);
+++
+++  const chosen = [];
+++  const tagCounts = {};
+++
+++  for (const item of ranked) {
+++    if (chosen.length >= CONFIG.MAX_BEATS) break;
+++    const tag = item.reaction.tags[0] || "other";
+++    if ((tagCounts[tag] || 0) >= 2) continue;
+++    chosen.push(item);
+++    tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+++  }
+++
+++  let block =
+++    "\n[WITNESS REACTIONS] Add only subtle fictional social/environmental reactions when they fit the established scene. " +
+++    "Do not invent new violence, cruelty, motives, fear, guilt, ownership, or historical facts. " +
+++    "Do not override {{char}} or force NPC behavior. Prefer silence, glances, spacing, routine, weather, " +
+++    "institutional sounds, and aftermath over graphic description or procedural detail.\n";
+++
+++  let used = tokens(block);
+++  const emitted = [];
+++
+++  for (const item of chosen) {
+++    const line = "- " + item.reaction.line + ".\n";
+++    if (used + tokens(line) > CONFIG.MAX_TOKENS) break;
+++    block += line;
+++    used += tokens(line);
+++    emitted.push(item.reaction.id);
+++  }
+++
+++  if (emitted.length) {
+++    block +=
+++      "Keep reactions uneven and human: a room can be tense without everyone reacting, and ordinary background activity can continue.\n";
+++    context.character.scenario += block;
+++  }
+++
+++  if (CONFIG.DEBUG) {
+++    console.log(
+++      "[Witness Reactions] activation=" + activation +
+++      " tokens~" + tokens(block) +
+++      " emitted=" + emitted.join(",")
+++    );
+++  }
+++} else if (CONFIG.DEBUG) {
+++  console.log("[Witness Reactions] inactive activation=" + activation);
+++}
+--- a/.github/workflows/pages.yml
++++ /dev/null
+@@ -1,65 +0,0 @@
+-name: Deploy GitHub Pages
+-
+-on:
+-  push:
+-    branches:
+-      - main
+-  workflow_dispatch:
+-
+-# Lets the workflow publish to GitHub Pages using a short-lived OIDC token.
+-permissions:
+-  contents: read
+-  pages: write
+-  id-token: write
+-
+-# One deployment at a time. A newer push waits for the running deployment
+-# to finish instead of cancelling it halfway.
+-concurrency:
+-  group: pages
+-  cancel-in-progress: false
+-
+-jobs:
+-  build:
+-    runs-on: ubuntu-latest
+-
+-    steps:
+-      - name: Checkout repository
+-        uses: actions/checkout@v7
+-
+-      - name: Set up Node
+-        uses: actions/setup-node@v7
+-        with:
+-          node-version: 24
+-          cache: npm
+-
+-      # Reports the path GitHub Pages serves this site from (/<repository-name>).
+-      - name: Configure GitHub Pages
+-        id: pages
+-        uses: actions/configure-pages@v6
+-
+-      - name: Install dependencies
+-        run: npm ci
+-
+-      # Runs the TypeScript checks, then builds the site into ./dist.
+-      - name: Build website
+-        run: npm run build
+-        env:
+-          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+-
+-      - name: Upload website
+-        uses: actions/upload-pages-artifact@v5
+-        with:
+-          path: ./dist
+-
+-  deploy:
+-    needs: build
+-    runs-on: ubuntu-latest
+-
+-    environment:
+-      name: github-pages
+-      url: ${{ steps.deployment.outputs.page_url }}
+-
+-    steps:
+-      - name: Deploy
+-        id: deployment
+-        uses: actions/deploy-pages@v5

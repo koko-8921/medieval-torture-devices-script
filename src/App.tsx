@@ -42,14 +42,22 @@ export default function App() {
     mainRef.current?.focus({ preventScroll: true })
   }
 
-  let page
-  if (pathname === paths.home) page = <HomePage />
-  else if (pathname === paths.about) page = <AboutPage />
-  else if (pathname === paths.scraper) page = <ScraperPage />
-  else if (pathname === paths.calculator) page = <CalculatorPage />
-  else if (pathname === paths.catalogue) page = <CataloguePage />
-  else if (activeModule) page = <ModulePage module={activeModule} />
-  else page = <NotFoundPage />
+const page =
+  pathname === paths.home ? (
+    <HomePage />
+  ) : pathname === paths.about ? (
+    <AboutPage />
+  ) : pathname === paths.scraper ? (
+    <ScraperPage />
+  ) : pathname === paths.calculator ? (
+    <CalculatorPage />
+  ) : pathname === paths.catalogue ? (
+    <CataloguePage />
+  ) : activeModule ? (
+    <ModulePage module={activeModule} />
+  ) : (
+    <NotFoundPage />
+  )
 
   return (
     <div className={styles.shell}>
