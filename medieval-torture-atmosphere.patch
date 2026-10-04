@@ -1,0 +1,116 @@
+diff --git a/dungeon_atmosphere_engine.js b/dungeon_atmosphere_engine.js
+new file mode 100644
+--- /dev/null
++++ b/dungeon_atmosphere_engine.js
+@@ -0,0 +1,96 @@
++"use worker";
++
++/*
++ * Dungeon Atmosphere Engine — JanitorAI Script
++ * v0.1.0
++ *
++ * Adds gothic / historical punishment-scene atmosphere without forcing
++ * cruelty, violence, torture, or a specific character motivation.
++ *
++ * Narrative texture only; no procedural guidance for harming or restraining
++ * a real person.
++ */
++
++context.character = context.character || {};
++context.character.scenario = context.character.scenario || "";
++
++const CONFIG = {
++  DEBUG: false,
++  HISTORY_DEPTH: 6,
++  MAX_BEATS: 4,
++  MAX_TOKENS: 170,
++  MIN_ACTIVATION: 4,
++  LATEST_BONUS: 4,
++  RECENT_BONUS: 1,
++  DIRECT_BONUS: 7,
++  REPETITION_PENALTY: 4
++};
++
++const BEATS = [
++  {id:"cold_stone",tags:["place","sensory"],keys:["dungeon","cell","crypt","basement","stone","castle","prison"],line:"let the cold stone, damp mortar, or chill in the air make the room feel older and less welcoming"},
++  {id:"iron_smell",tags:["sensory","equipment"],keys:["iron","chain","manacles","shackle","rack","cage","forge"],line:"use the faint metallic smell of old iron, oil, or smoke as background texture"},
++  {id:"chain_echo",tags:["sound","restraint"],keys:["chain","shackle","manacle","fetters","cell","prisoner"],line:"use a distant chain scrape, ring against masonry, or a single metallic clink to punctuate silence"},
++  {id:"torch_gutter",tags:["light","place"],keys:["torch","candle","lantern","dark","dungeon","chamber"],line:"let torchlight or candlelight gutter, stretch shadows, or briefly reveal details before they disappear again"},
++  {id:"water_drip",tags:["sound","place"],keys:["damp","water","cell","dungeon","basement","stone"],line:"use slow water drips, condensation, or a faint underground trickle to make time feel heavy"},
++  {id:"door_weight",tags:["place","tension"],keys:["door","cell","dungeon","prison","chamber","locked"],line:"make old hinges, a heavy door, or the sound of a latch closing carry more weight than the dialogue"},
++  {id:"straw_and_dust",tags:["sensory","place"],keys:["cell","prison","dungeon","straw","dust","bed"],line:"use stale straw, dust, rough timber, and old fabric to give the room a neglected lived-in texture"},
++  {id:"scarred_furniture",tags:["equipment","aftermath"],keys:["table","bench","chair","rack","post","wood","room"],line:"describe worn timber, old scratches, dents, or polished edges as quiet traces of the room's history"},
++  {id:"after_scene",tags:["aftermath","pacing"],keys:["after","aftermath","released","escape","fight","struggle","punishment"],line:"after a tense beat, let the room go quiet again and leave small physical traces such as disturbed dust, shifted furniture, or a swinging chain"},
++  {id:"watchers",tags:["social","tension"],keys:["guard","crowd","spectator","witness","court","public","execution"],line:"use silent onlookers, guarded expressions, or people deliberately looking away to make the social pressure visible"},
++  {id:"ritualized_silence",tags:["social","pacing"],keys:["ritual","court","prison","punishment","inquisition","ceremony","execution"],line:"make the atmosphere feel formal and ritualized: measured footsteps, silence before a verdict, or everyone waiting for someone else to speak"},
++  {id:"old_markings",tags:["place","mystery"],keys:["mark","scratch","inscription","wall","stone","cell","dungeon"],line:"use old initials, faded chalk, worn symbols, or illegible marks as ambiguous traces rather than explaining them outright"},
++  {id:"distant_activity",tags:["sound","place"],keys:["dungeon","prison","castle","corridor","cell","hall"],line:"keep the world alive beyond the immediate scene with muffled footsteps, distant voices, a bucket dragged over stone, or a far-off bell"},
++  {id:"airless_room",tags:["sensory","tension"],keys:["cell","chamber","dungeon","basement","confined","small"],line:"make a cramped room feel close and stale through limited airflow, low ceilings, and the absence of ordinary outside sounds"},
++  {id:"public_shame",tags:["social","display"],keys:["pillory","stocks","pranger","courtyard","market","public","shame"],line:"for public-punishment scenes, emphasize exposure, gossip, bells, weather, and the uncomfortable attention of passersby"},
++  {id:"museum_distance",tags:["historical","place"],keys:["museum","collection","gallery","replica","display","exhibit"],line:"for a museum or collection, keep a deliberate distance between the object and its history: labels, provenance disputes, ropes, glass, and curious visitors can create tension without endorsing every legend"}
++];
++
++const TRIGGERS = ["dungeon","prison","prisoner","cell","torture","punishment","execution","rack","stocks","pillory","gibbet","manacles","shackles","fetters","chain","iron maiden","scold's bridle","torture chair","dark chamber","basement","castle","crypt","interrogation","captivity","museum","collection","gallery"];
++
++function msg(m){ return ((m && m.message) ? m.message : String(m || "")).toLowerCase(); }
++function hits(text, arr){ let n=0; for(const x of arr) if(text.includes(x)) n++; return n; }
++function tokens(text){ return Math.ceil((text || "").length / 4); }
++
++const messages = context.chat.last_messages || [];
++const recent = messages.slice(Math.max(0, messages.length - CONFIG.HISTORY_DEPTH)).map(msg).join(" ");
++const latest = String(context.chat.last_message || "").toLowerCase();
++const activation = hits(latest, TRIGGERS) * 3 + hits(recent, TRIGGERS);
++
++if (activation >= CONFIG.MIN_ACTIVATION) {
++  const ranked = BEATS.map((beat, i) => {
++    let score = hits(latest, beat.keys) * CONFIG.LATEST_BONUS + hits(recent, beat.keys) * CONFIG.RECENT_BONUS;
++    if (beat.keys.some(k => latest.includes(k))) score += CONFIG.DIRECT_BONUS;
++    if (beat.keys.some(k => recent.includes(k) && !latest.includes(k))) score -= CONFIG.REPETITION_PENALTY;
++    score += (10 - (i % 10)) / 100;
++    return { beat, score };
++  }).filter(x => x.score > 0).sort((a,b) => b.score - a.score);
++
++  const chosen = [];
++  const tagCounts = {};
++  for (const item of ranked) {
++    if (chosen.length >= CONFIG.MAX_BEATS) break;
++    const tag = item.beat.tags[0] || "other";
++    if ((tagCounts[tag] || 0) >= 2) continue;
++    chosen.push(item);
++    tagCounts[tag] = (tagCounts[tag] || 0) + 1;
++  }
++
++  let block = "\n[DUNGEON ATMOSPHERE] Add only subtle fictional atmosphere when it fits the established scene. Do not invent cruelty, violence, torture, motives, ownership, or historical certainty. Keep {{char}}'s personality and the scene authoritative. Prefer implication, sound, weather, light, texture, witnesses, and aftermath over graphic description or procedural detail.\n";
++  let used = tokens(block);
++  const emitted = [];
++  for (const item of chosen) {
++    const line = "- " + item.beat.line + ".\n";
++    if (used + tokens(line) > CONFIG.MAX_TOKENS) break;
++    block += line;
++    used += tokens(line);
++    emitted.push(item.beat.id);
++  }
++
++  if (emitted.length) {
++    block += "Keep the atmosphere uneven: not every beat needs to appear, and a quiet pause can be more effective than another threat or violent action.\n";
++    context.character.scenario += block;
++  }
++  if (CONFIG.DEBUG) console.log("[Dungeon Atmosphere] activation=" + activation + " tokens~" + tokens(block) + " emitted=" + emitted.join(","));
++} else if (CONFIG.DEBUG) {
++  console.log("[Dungeon Atmosphere] inactive activation=" + activation);
++}
+
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -29,6 +29,7 @@ The selection is deterministic: there is no random novelty cycling.
+ ## Files
+ 
+ - `historical_equipment.js` — production module.
++- `dungeon_atmosphere_engine.js` — optional gothic / historical atmosphere module.
+ - `tests/test-scenarios.md` — behavioral test matrix.
+ - `docs/DESIGN.md` — selection/token architecture and tuning notes.
+@@ -37,6 +38,10 @@ The selection is deterministic: there is no random novelty cycling.
+ Catalogue descriptions are identification, provenance, visual/narrative context, and selection metadata. They intentionally avoid operational instructions for injuring a real person.
++
++The atmosphere module follows the same rule: it adds sensory and social texture, not instructions. It can suggest sound, lighting, weather, worn surroundings, witnesses, and aftermath while leaving the character card authoritative.
