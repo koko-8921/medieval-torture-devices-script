@@ -23,8 +23,7 @@ export default function App() {
 
   const moduleSlug = moduleSlugFromPath(pathname)
   const activeModule = moduleSlug ? findModule(moduleSlug) : undefined
-
-  // A module page takes the module's accent. Everything else uses the home red.
+// Module pages use their own theme; other pages use the default theme.
   const theme = activeModule?.theme ?? DEFAULT_THEME
   useTheme(theme)
 
