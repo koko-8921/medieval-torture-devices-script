@@ -28,7 +28,7 @@ const activeModule =
   const theme = activeModule?.theme ?? DEFAULT_THEME
   useTheme(theme)
 
-  // On a page change, start at the top and move focus into the new page.
+// Reset scroll position and move focus when navigating.
   useEffect(() => {
     if (previousPath.current === pathname) return
     previousPath.current = pathname
